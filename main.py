@@ -186,33 +186,109 @@ class LeaveRequestWindow(QtWidgets.QWidget):
         self.type_combo = QtWidgets.QComboBox(self)
         self.type_combo.addItems(["Vacaciones", "Baja", "Asuntos propios"])
         layout.addRow("Tipo:", self.type_combo)
+           # Modalidad: día completo o por horas
+        self.kind_combo = QtWidgets.QComboBox(self)
+        self.kind_combo.addItems(["Día completo", "Por horas"])
+        layout.addRow("Modalidad:", self.kind_combo)
+        # Controles día completo
         self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate(), self)
         self.start_date.setCalendarPopup(True)
-        layout.addRow("Desde:", self.start_date)
         self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate(), self)
         self.end_date.setCalendarPopup(True)
+        layout.addRow("Desde:", self.start_date)
         layout.addRow("Hasta:", self.end_date)
+        # Controles por horas
+        self.partial_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate(), self)
+        self.partial_date.setCalendarPopup(True)
+        self.start_time = QtWidgets.QTimeEdit(QtCore.QTime.currentTime(), self)
+        self.end_time = QtWidgets.QTimeEdit(QtCore.QTime.currentTime(), self)
+        layout.addRow("Fecha:", self.partial_date)
+        layout.addRow("Inicio:", self.start_time)
+        layout.addRow("Fin:", self.end_time)
+        # Motivo
         self.notes = QtWidgets.QTextEdit(self)
         layout.addRow("Motivo:", self.notes)
+        # Botón enviar
         submit_btn = QtWidgets.QPushButton("Enviar solicitud", self)
         submit_btn.setStyleSheet(f"background-color: {COLOR_SECUNDARIO}; color: white;")
         submit_btn.clicked.connect(self.submit_request)
         layout.addRow(submit_btn)
+        # Funcón para alternar controles
+        def toggle_kind():
+            is_partial = (self.kind_combo.currentText() == "Por horas")
+            self.start_date.setVisible(not is_partial)
+            self.end_date.setVisible(not is_partial)
+            self.partial_date.setVisible(is_partial)
+            self.start_time.setVisible(is_partial)
+            self.end_time.setVisible(is_partial)
+        self.kind_combo.currentIndexChanged.connect(lambda _: toggle_kind())
+        toggle_kind()
         self.setLayout(layout)
 
     def submit_request(self):
-        from_date = self.start_date.date().toPyDate().isoformat()
-        to_date = self.end_date.date().toPyDate().isoformat()
+        kind = "partial_hours" if self.kind_combo.currentText() == "Por horas" else "full_day"
+        now_iso = datetime.utcnow().isoformat()
         req = {
             "uid": self.user.uid,
             "type": self.type_combo.currentText(),
-            "from": from_date,
-            "to": to_date,
             "status": "pending",
             "notes": self.notes.toPlainText(),
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": now_iso,
+            "kind": kind,
         }
+        if kind == "full_day":
+            from_date = self.start_date.date().toPyDate().isoformat()
+            to_date = self.end_date.date().toPyDate().isoformat()
+            req["from"] = from_date
+            req["to"] = to_date
+        else:
+            date_str = self.partial_date.date().toPyDate().isoformat()
+            start_time = self.start_time.time().toString("HH:mm")
+            end_time = self.end_time.time().toString("HH:mm")
+            from datetime import datetime as dt
+            m1 = dt.strptime(start_time, "%H:%M")
+            m2 = dt.strptime(end_time, "%H:%M")
+            duration = int((m2 - m1).total_seconds() // 60)
+            if duration <= 0:
+                QtWidgets.QMessageBox.warning(self, "Hora inválida", "La hora fin debe ser posterior a la de inicio.")
+                return
+            req.update({
+                "date": date_str,
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration_minutes": duration,
+            })
         self.db.collection("leave_requests").add(req)
+        QtWidgets.QMessageBox.information(self, "Solicitud enviada", "Tu solicitud ha sido enviada correctamente.")
+     self.close()  
+262
+263
+264
+265
+266
+267
+268
+269
+270
+271
+272
+273
+274
+275
+276
+277
+278
+279
+280
+281
+282
+283
+284
+285
+286
+287
+288
+on("leave_requests").add(req)
         QtWidgets.QMessageBox.information(self, "Solicitud enviada", "Tu solicitud ha sido enviada correctamente.")
         self.close()
 
